@@ -1128,7 +1128,7 @@ class CoreOSDistro(AbstractDistro):
 #   ArchLinuxDistro
 ############################################################
 
-class ArchDistro(AbstractDistro):
+class archDistro(AbstractDistro):
     """
     Arch Distro concrete class
     Put Arch specific behavior here...
