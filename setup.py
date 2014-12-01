@@ -35,11 +35,10 @@ def getDistro():
     # openSUSE and SLE the same
     if distro.find('suse') != -1:
         distro = 'suse'
-    if distro.find('arch') != -1:
-        distro = 'arch'        
     if (distro.find('fedora') != -1
     or distro.find('red hat') != -1
-    or distro.find('centos') != -1):
+    or distro.find('centos') != -1
+    or distro.find('arch') != -1):
         distro = 'redhat'
 
     return distro
