@@ -1136,7 +1136,7 @@ class ArchDistro(AbstractDistro):
     CORE_UID = 500
 
     def __init__(self):
-        super(ArchDistro,self).__init__()
+        super(archDistro,self).__init__()
         self.requiredDeps += [ "/usr/bin/systemctl" ]
         self.agent_service_name = 'waagent'
         self.init_script_file='/etc/systemd/system/waagent.service'
