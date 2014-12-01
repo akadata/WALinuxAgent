@@ -37,7 +37,8 @@ def getDistro():
         distro = 'suse'
     if (distro.find('fedora') != -1
     or distro.find('red hat') != -1
-    or distro.find('centos') != -1):
+    or distro.find('centos') != -1
+    or distro.find('archlinux') != -1):
         distro = 'redhat'
 
     return distro
