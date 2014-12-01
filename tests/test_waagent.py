@@ -35,7 +35,7 @@ class WaagentTestCases(unittest.TestCase):
         waagent.LoggerInit('/var/log/waagent.log','/dev/console')
         if not self.AmIRoot():
             raise Exception('I need to run as root')
-        DistroName=platform.dist()[0]
+        DistroName='redhat'
         self.failUnless(hasattr(waagent,DistroName+'Distro') == True,DistroName+' is not a supported linux distribution.')
         waagent.MyDistro=getattr(waagent,DistroName+'Distro')()
         # set up /etc/waagent.conf
