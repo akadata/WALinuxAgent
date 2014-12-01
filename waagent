@@ -1124,154 +1124,135 @@ class CoreOSDistro(AbstractDistro):
     def getConfigurationPath(self):
         return "/usr/share/oem/waagent.conf"
 
-############################################################
-#   ArchLinuxDistro
-############################################################
 
-class archDistro(AbstractDistro):
-    """
-    Arch Distro concrete class
-    Put Arch specific behavior here...
-    """
-    CORE_UID = 500
 
+
+
+############################################################
+#	archDistro
+############################################################    
+arch_systemd_service = """\
+[Unit]
+Description=Windows Azure Linux Agent
+After=network.target
+After=sshd.service
+ConditionFileIsExecutable=/usr/sbin/waagent
+ConditionPathExists=/etc/waagent.conf
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/waagent -daemon
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+class archDistro(redhatDistro):
+    """
+    archDistro concrete class
+    Put Fedora specific behavior here...
+    """
     def __init__(self):
         super(archDistro,self).__init__()
-        self.requiredDeps += [ "/usr/bin/systemctl" ]
-        self.agent_service_name = 'waagent'
-        self.init_script_file='/etc/systemd/system/waagent.service'
-        self.fileBlackList.append("/etc/machine-id")
-        self.dhcp_client_name='systemd-networkd'
-        self.getpidcmd='pidof '
-        self.shadow_file_mode=0640
-        self.waagent_path='/usr/share/oem/waagent/bin'
-        self.python_path='/usr/share/oem/python/bin'
-        self.dhcp_enabled=True
-        if 'PATH' in os.environ:
-            os.environ['PATH'] = "{0}:{1}".format(os.environ['PATH'], self.python_path)
-        else:
-            os.environ['PATH'] = self.python_path
+        self.service_cmd = '/usr/bin/systemctl'
+        self.hostname_file_path = '/etc/hostname'
+        self.init_script_file = '/usr/lib/systemd/system/' + self.agent_service_name + '.service'
+        self.init_file = fedora_systemd_service
+        self.grubKernelBootOptionsFile = '/etc/default/grub'
+        self.grubKernelBootOptionsLine = 'GRUB_CMDLINE_LINUX='
 
-        if 'PYTHONPATH' in os.environ:
-            os.environ['PYTHONPATH'] = "{0}:{1}".format(os.environ['PYTHONPATH'], self.waagent_path)
-        else:
-            os.environ['PYTHONPATH'] = self.waagent_path
-
-    def checkPackageInstalled(self,p):
-        """
-        There is no package manager in Arch.  Return 1 since it must be preinstalled.
-        """
-        return 1
-
-    def checkDependencies(self):
-        for a in self.requiredDeps:
-            if Run("which " + a + " > /dev/null 2>&1",chk_err=False):
-                Error("Missing required dependency: " + a)
-                return 1
+    def publishHostname(self, name):
+        SetFileContents(self.hostname_file_path, name + '\n')
+        ethernetInterface = MlsyDistro.GetInterfaceName()
+        filepath = "/etc/netctl/interfaces" + ethernetInterface
+        if os.path.isfile(filepath):
+            ReplaceFileContentsAtomic(filepath, "DHCP_HOSTNAME=" + name + "\n"
+                    + "\n".join(filter(lambda a: not a.startswith("DHCP_HOSTNAME"), GetFileContents(filepath).split('\n'))))
         return 0
 
+    def installAgentServiceScriptFiles(self):
+        SetFileContents(self.init_script_file, self.init_file)
+        os.chmod(self.init_script_file, 0644)
+        return Run(self.service_cmd + ' daemon-reload')
 
-    def checkPackageUpdateable(self,p):
+    def registerAgentService(self):
+        self.installAgentServiceScriptFiles()
+        return Run(self.service_cmd + ' enable ' + self.agent_service_name)
+
+    def uninstallAgentService(self):
         """
-        There is no package manager in Arch.  Return 0 since it can't be updated via package.
+        Call service subsystem to remove waagent script.
         """
-        return 0
+        return Run(self.service_cmd + ' disable ' + self.agent_service_name)
+
+    def unregisterAgentService(self):
+        """
+        Calls self.stopAgentService and call self.uninstallAgentService()
+        """
+        self.stopAgentService()
+        self.uninstallAgentService()
 
     def startAgentService(self):
-        return Run('systemctl start ' + self.agent_service_name)
+        """
+        Service call to start the Agent service
+        """
+        return Run(self.service_cmd + ' start ' + self.agent_service_name)
 
     def stopAgentService(self):
-        return Run('systemctl stop ' + self.agent_service_name)
+        """
+        Service call to stop the Agent service
+        """
+        return Run(self.service_cmd + ' stop '  + self.agent_service_name, False)
 
     def restartSshService(self):
         """
         Service call to re(start) the SSH service
         """
-        retcode = Run("systemctl restart sshd")
+        sshRestartCmd = self.service_cmd + " " +  self.ssh_service_restart_option + " " + self.ssh_service_name
+        retcode = Run(sshRestartCmd)
         if retcode > 0:
             Error("Failed to restart SSH service with return code:" + str(retcode))
         return retcode
 
-    def sshDeployPublicKey(self,fprint,path):
+    def checkPackageInstalled(self, p):
         """
-        We support PKCS8.
+        Query package database for prescence of an installed package.
         """
-        if Run("ssh-keygen -i -m PKCS8 -f " + fprint + " >> " + path):
-            return 1
-        else :
-            return 0
+        import rpm
+        ts = rpm.TransactionSet()
+        rpms = ts.dbMatch(rpm.RPMTAG_PROVIDES, p)
+        return bool(len(rpms) > 0)
 
-    def RestartInterface(self, iface):
-        Run("systemctl restart systemd-networkd")
+    def deleteRootPassword(self):
+        return Run("/sbin/usermod root -p '!!'")
+
+    def packagedInstall(self,buildroot):
+        """
+        Called from setup.py for use by RPM.
+        Copies generated files waagent.conf, under the buildroot.
+        """
+        if not os.path.exists(buildroot+'/etc'):
+            os.mkdir(buildroot+'/etc')
+        SetFileContents(buildroot+'/etc/waagent.conf', MyDistro.waagent_conf_file)
+
+        if not os.path.exists(buildroot+'/etc/logrotate.d'):
+            os.mkdir(buildroot+'/etc/logrotate.d')
+        SetFileContents(buildroot+'/etc/logrotate.d/WALinuxAgent', WaagentLogrotate)
+
+        self.init_script_file=buildroot+self.init_script_file
+        # this allows us to call installAgentServiceScriptFiles()
+        if not os.path.exists(os.path.dirname(self.init_script_file)):
+            os.mkdir(os.path.dirname(self.init_script_file))
+        self.installAgentServiceScriptFiles()
 
     def CreateAccount(self, user, password, expiration, thumbprint):
-        """
-        Create a user account, with 'user', 'password', 'expiration', ssh keys
-        and sudo permissions.
-        Returns None if successful, error string on failure.
-        """
-        userentry = None
-        try:
-            userentry = pwd.getpwnam(user)
-        except:
-            pass
-        uidmin = None
-        try:
-            uidmin = int(GetLineStartingWith("UID_MIN", "/etc/login.defs").split()[1])
-        except:
-            pass
-        if uidmin == None:
-            uidmin = 100
-        if userentry != None and userentry[2] < uidmin and userentry[2] != self.CORE_UID:
-            Error("CreateAccount: " + user + " is a system user. Will not set password.")
-            return "Failed to set password for system user: " + user + " (0x06)."
-        if userentry == None:
-            command = "useradd --create-home --password '*' " + user
-            if expiration != None:
-                command += " --expiredate " + expiration.split('.')[0]
-            if Run(command):
-                Error("Failed to create user account: " + user)
-                return "Failed to create user account: " + user + " (0x07)."
-        else:
-            Log("CreateAccount: " + user + " already exists. Will update password.")
-        if password != None:
-            RunSendStdin("chpasswd", user + ":" + password + "\n")
-        try:
-            if password == None:
-                SetFileContents("/etc/sudoers.d/waagent", user + " ALL = (ALL) NOPASSWD: ALL\n")
-            else:
-                SetFileContents("/etc/sudoers.d/waagent", user + " ALL = (ALL) ALL\n")
-            os.chmod("/etc/sudoers.d/waagent", 0440)
-        except:
-            Error("CreateAccount: Failed to configure sudo access for user.")
-            return "Failed to configure sudo privileges (0x08)."
-        home = MyDistro.GetHome()
-        if thumbprint != None:
-            dir = home + "/" + user + "/.ssh"
-            CreateDir(dir, user, 0700)
-            pub = dir + "/id_rsa.pub"
-            prv = dir + "/id_rsa"
-            Run("ssh-keygen -y -f " + thumbprint + ".prv > " + pub)
-            SetFileContents(prv, GetFileContents(thumbprint + ".prv"))
-            for f in [pub, prv]:
-                os.chmod(f, 0600)
-                ChangeOwner(f, user)
-            SetFileContents(dir + "/authorized_keys", GetFileContents(pub))
-            ChangeOwner(dir + "/authorized_keys", user)
-        Log("Created user account: " + user)
-        return None
+        super(archDistro, self).CreateAccount(user, password, expiration, thumbprint)
+        Run('/sbin/usermod ' + user + ' -G wheel')
 
-    def startDHCP(self):
-        Run("systemctl start " + self.dhcp_client_name, chk_err=False)
+    def DeleteAccount(self, user):
+        Run('/sbin/usermod ' + user + ' -G ""')
+        super(archDistro, self).DeleteAccount(user)
 
-    def stopDHCP(self):
-        Run("systemctl stop " + self.dhcp_client_name, chk_err=False)
-
-    def translateCustomData(self, data):
-        return base64.b64decode(data)
-
-    def getConfigurationPath(self):
-        return "/usr/share/oem/waagent.conf"
     
 ############################################################    
 #	debianDistro
