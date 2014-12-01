@@ -1128,15 +1128,15 @@ class CoreOSDistro(AbstractDistro):
 #   ArchLinuxDistro
 ############################################################
 
-class ArchLinuxDistro(AbstractDistro):
+class ArchDistro(AbstractDistro):
     """
-    ArchLinux Distro concrete class
-    Put ArchLinux specific behavior here...
+    Arch Distro concrete class
+    Put Arch specific behavior here...
     """
     CORE_UID = 500
 
     def __init__(self):
-        super(CoreOSDistro,self).__init__()
+        super(ArchDistro,self).__init__()
         self.requiredDeps += [ "/usr/bin/systemctl" ]
         self.agent_service_name = 'waagent'
         self.init_script_file='/etc/systemd/system/waagent.service'
@@ -1159,7 +1159,7 @@ class ArchLinuxDistro(AbstractDistro):
 
     def checkPackageInstalled(self,p):
         """
-        There is no package manager in CoreOS.  Return 1 since it must be preinstalled.
+        There is no package manager in Arch.  Return 1 since it must be preinstalled.
         """
         return 1
 
@@ -1173,7 +1173,7 @@ class ArchLinuxDistro(AbstractDistro):
 
     def checkPackageUpdateable(self,p):
         """
-        There is no package manager in CoreOS.  Return 0 since it can't be updated via package.
+        There is no package manager in Arch.  Return 0 since it can't be updated via package.
         """
         return 0
 
